@@ -2,6 +2,7 @@
 import os
 import uuid
 import streamlit as st
+from dotenv import load_dotenv
 
 
 # ==================================================
@@ -17,25 +18,37 @@ st.set_page_config(
 
 
 # ==================================================
-# 2. LOAD CLOUD SECRET
+# 2. LOAD GROQ API KEY
 # ==================================================
 
-# Streamlit Cloud uses st.secrets.
-# Local execution can use your existing .env file.
+# Local VS Code: read the key from .env
+load_dotenv()
 
+# Streamlit Cloud: read the key from Secrets
 try:
-    if "GROQ_API_KEY" in st.secrets:
-        os.environ["GROQ_API_KEY"] = st.secrets["GROQ_API_KEY"]
+    cloud_api_key = st.secrets.get("GROQ_API_KEY")
+    if cloud_api_key:
+        os.environ["GROQ_API_KEY"] = cloud_api_key
 except Exception:
+    # Local .env may be used when Streamlit Secrets are unavailable
     pass
 
+# Verify that an API key is available
+if not os.getenv("GROQ_API_KEY"):
+    st.error(
+        "Groq API key is missing. "
+        "For Streamlit Cloud, add GROQ_API_KEY in Settings > Secrets. "
+        "For local execution, add it to your .env file."
+    )
+    st.stop()
 
-# Import backend after configuring the API key
+
+# Import backend only after loading the API key
 from rag_with_memory import ask_question
 
 
 # ==================================================
-# 3. CUSTOM STREAMLIT STYLING
+# 3. CUSTOM CSS STYLING
 # ==================================================
 
 st.markdown("""
@@ -139,7 +152,7 @@ def create_new_chat():
 
 
 # ==================================================
-# 6. SIDEBAR - BRANDING AND CHAT HISTORY
+# 6. LEFT SIDEBAR - CHAT HISTORY
 # ==================================================
 
 with st.sidebar:
@@ -150,10 +163,7 @@ with st.sidebar:
 
     st.divider()
 
-    if st.button(
-        "＋  New Chat",
-        use_container_width=True
-    ):
+    if st.button("＋ New Chat", use_container_width=True):
 
         create_new_chat()
         st.rerun()
@@ -162,7 +172,6 @@ with st.sidebar:
 
     st.markdown("### 💬 Recent Chats")
 
-    # Display newest chats first
     for chat_id in reversed(list(st.session_state.chats.keys())):
 
         chat = st.session_state.chats[chat_id]
@@ -170,7 +179,7 @@ with st.sidebar:
         title = chat["title"]
 
         if chat_id == st.session_state.active_chat_id:
-            title = "●  " + title
+            title = "● " + title
 
         if st.button(
             title,
@@ -201,7 +210,7 @@ with st.sidebar:
 
 
 # ==================================================
-# 7. GET ACTIVE CONVERSATION
+# 7. GET ACTIVE CHAT
 # ==================================================
 
 active_chat_id = st.session_state.active_chat_id
@@ -212,7 +221,7 @@ messages = active_chat["messages"]
 
 
 # ==================================================
-# 8. MAIN APPLICATION HEADER
+# 8. MAIN HEADER
 # ==================================================
 
 st.title("🎓 GITAM Student Assistant")
@@ -227,7 +236,7 @@ st.divider()
 
 
 # ==================================================
-# 9. WELCOME SCREEN AND SUGGESTED QUESTIONS
+# 9. WELCOME SCREEN
 # ==================================================
 
 if not messages:
@@ -247,76 +256,70 @@ if not messages:
     with col1:
 
         if st.button(
-            "📅  What is the attendance requirement?",
+            "📅 What is the attendance requirement?",
             use_container_width=True
         ):
 
             st.session_state.pending_question = (
                 "What is the attendance requirement?"
             )
-
             st.rerun()
 
         if st.button(
-            "🎓  What scholarships are available?",
+            "🎓 What scholarships are available?",
             use_container_width=True
         ):
 
             st.session_state.pending_question = (
                 "What scholarships are available?"
             )
-
             st.rerun()
 
         if st.button(
-            "🔄  How can I clear my backlogs?",
+            "🔄 How can I clear my backlogs?",
             use_container_width=True
         ):
 
             st.session_state.pending_question = (
                 "How can I clear my backlogs?"
             )
-
             st.rerun()
 
     with col2:
 
         if st.button(
-            "📝  Explain the examination rules",
+            "📝 Explain the examination rules",
             use_container_width=True
         ):
 
             st.session_state.pending_question = (
                 "Explain the examination rules."
             )
-
             st.rerun()
 
         if st.button(
-            "💰  Explain the tuition fee structure",
+            "💰 Explain the tuition fee structure",
             use_container_width=True
         ):
 
             st.session_state.pending_question = (
                 "Explain the tuition fee structure."
             )
-
             st.rerun()
 
         if st.button(
-            "📄  How can I apply for revaluation?",
+            "📄 How can I apply for revaluation?",
             use_container_width=True
         ):
 
             st.session_state.pending_question = (
                 "How can I apply for revaluation?"
             )
-
             st.rerun()
 
 
 # ==================================================
-# 10. DISPLAY EXISTING CHAT MESSAGES
+# 10. DISPLAY CHAT HISTORY
 # ==================================================
 
 for message in messages:
@@ -358,14 +361,13 @@ question = typed_question or pending_question
 
 
 # ==================================================
-# 12. GENERATE ANSWER
+# 12. PROCESS STUDENT QUESTION
 # ==================================================
 
 if question:
 
-    # Display user message
+    # Display student question
     with st.chat_message("user"):
-
         st.markdown(question)
 
     # Save user message
@@ -374,12 +376,11 @@ if question:
         "content": question
     })
 
-    # Create conversation title
+    # Generate chat title
     if active_chat["title"] == "New Chat":
-
         active_chat["title"] = question[:35]
 
-    # Generate answer
+    # Generate AI response
     with st.chat_message("assistant"):
 
         with st.spinner(
@@ -395,16 +396,15 @@ if question:
 
                 answer = response["answer"]
 
-                # Extract unique source filenames
-                sources = list(dict.fromkeys(
+                # Extract source filenames
+                source_docs = response.get("sources", [])
 
+                sources = list(dict.fromkeys(
                     doc.metadata.get(
                         "source",
                         "Unknown source"
                     )
-
-                    for doc in response["sources"]
-
+                    for doc in source_docs
                 ))
 
                 st.markdown(answer)
@@ -423,21 +423,17 @@ if question:
                         "Please verify the knowledge base."
                     )
 
-                # Save assistant message
+                # Save assistant response
                 messages.append({
-
                     "role": "assistant",
-
                     "content": answer,
-
                     "sources": sources
-
                 })
 
             except Exception as error:
 
                 st.error(
-                    f"Unable to generate your answer: {error}"
+                    f"Unable to generate an answer: {error}"
                 )
 
 
